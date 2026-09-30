@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pong 2D</title>
+
+  <style>
+    /* ===== Estilo da página ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background-color: #0f172a; /* fundo escuro */
+      color: #e2e8f0;
+      font-family: Arial, Helvetica, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+    }
+
+    h1 {
+      margin: 8px 0 16px;
+      font-size: 26px;
+      letter-spacing: 2px;
+      color: #f8fafc;
+    }
+
+    /* ===== Placar (grande, no topo) ===== */
+    .placar {
+      display: flex;
+      gap: 40px;
+      margin-bottom: 12px;
+      font-size: 20px;
+      align-items: center;
+    }
+
+    .placar .numero {
+      font-size: 48px;
+      font-weight: bold;
+    }
+
+    .jogador1 { color: #4ade80; } /* verde  - jogador 1 */
+    .jogador2 { color: #38bdf8; } /* azul   - jogador 2 */
+
+    /* ===== Campo do jogo ===== */
+    .campo {
+      position: relative; /* permite colocar o "fim de jogo" por cima */
+      width: min(800px, 95vw); /* responsivo: nunca passa de 800px */
+    }
+
+    canvas {
+      display: block;
+      width: 100%;   /* o canvas encolhe junto com a tela */
+      height: auto;
+      border-radius: 12px;
+      background-color: #1e293b;
+      border: 2px solid #334155;
+    }
+
+    /* ===== Tela de fim de jogo ===== */
+    .fim-de-jogo {
+      position: absolute; /* fica por cima do canvas */
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 16px;
+      background-color: rgba(15, 23, 42, 0.85); /* escurece o campo */
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .fim-de-jogo p {
+      font-size: 32px;
+      font-weight: bold;
+      color: #f8fafc;
+    }
+
+    .fim-de-jogo button {
+      font-size: 18px;
+      padding: 10px 24px;
+      border: none;
+      border-radius: 8px;
+      background-color: #4ade80;
+      color: #0f172a;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .fim-de-jogo button:hover {
+      background-color: #22c55e;
+    }
+
+    /* Classe que esconde um elemento */
+    .escondido { display: none; }
+
+    .ajuda {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #94a3b8;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>PONG 2D</h1>
+
+  <!-- Placar dos dois jogadores -->
+  <div class="placar">
+    <div class="jogador1">
+      <span class="numero" id="pontos1">0</span>
+      <div>Jogador 1 (W/S)</div>
+    </div>
+    <div class="jogador2">
+      <span class="numero" id="pontos2">0</span>
+      <div>Jogador 2 (&uarr;/&darr;)</div>
+    </div>
+  </div>
+
+  <!-- Campo do jogo -->
+  <div class="campo">
+    <canvas id="tela" width="800" height="480"></canvas>
+
+    <!-- Tela de fim de jogo (começa escondida) -->
+    <div id="fimDeJogo" class="fim-de-jogo escondido">
+      <p id="mensagemFinal">Fim de jogo</p>
+      <button id="botaoRecomecar">Jogar novamente</button>
+    </div>
+  </div>
+
+  <p class="ajuda">Quem fizer 5 pontos primeiro vence. Jogador 1 usa W e S. Jogador 2 usa &uarr; e &darr;.</p>
+
+  <script>
+    // =====================================================
+    // VARIÁVEIS PRINCIPAIS
+    // =====================================================
+
+    // A "tela" (canvas) e o contexto, que serve para desenhar nela
+    var tela = document.getElementById("tela");
+    var ctx = tela.getContext("2d");
+
+    // Tamanho do campo (igual aos atributos width e height do canvas)
+    var larguraCampo = 800;
+    var alturaCampo = 480;
+
+    // A bola: posição (x, y) e velocidade (dx = horizontal, dy = vertical)
+    var bola = {
+      x: 400,
+      y: 240,
+      dx: 5,      // pixels que a bola anda para o lado a cada quadro
+      dy: 3,      // pixels que a bola anda para cima/baixo a cada quadro
+      tamanho: 8  // raio da bola
+    };
+
+    // As raquetes: só guardamos a posição e o tamanho
+    var larguraRaquete = 12;
+    var alturaRaquete = 80;
+    var velocidadeJogador = 7; // quantos pixels a raquete anda por tecla pressionada
+
+    var jogador1 = {
+      x: 20,                    // fixo: perto da borda esquerda
+      y: alturaCampo / 2 - alturaRaquete / 2 // começa no meio (na vertical)
+    };
+
+    var jogador2 = {
+      x: larguraCampo - 20 - larguraRaquete, // fixo: perto da borda direita
+      y: alturaCampo / 2 - alturaRaquete / 2
+    };
+
+    // Pontuação
+    var pontos1 = 0;
+    var pontos2 = 0;
+    var pontosParaVencer = 5;
+
+    // Controla se o jogo já acabou
+    var jogoAcabou = false;
+
+    // Objeto que guarda quais teclas estão apertadas agora
+    var teclas = {};
+
+    // =====================================================
+    // TECLADO
+    // =====================================================
+
+    // Quando uma tecla é apertada, guardamos "true" na lista
+    window.addEventListener("keydown", function (evento) {
+      // Impede a página de rolar quando o jogador usa as setas
+      if (evento.key === "ArrowUp" || evento.key === "ArrowDown") {
+        evento.preventDefault();
+      }
+      teclas[evento.key.toLowerCase()] = true;
+    });
+
+    // Quando a tecla é solta, guardamos "false"
+    window.addEventListener("keyup", function (evento) {
+      teclas[evento.key.toLowerCase()] = false;
+    });
+
+    // =====================================================
+    // MOVIMENTO DAS RAQUETES
+    // =====================================================
+
+    function moverJogadores() {
+      // Jogador 1: teclas W (sobe) e S (desce)
+      if (teclas["w"]) {
+        jogador1.y = jogador1.y - velocidadeJogador;
+      }
+      if (teclas["s"]) {
+        jogador1.y = jogador1.y + velocidadeJogador;
+      }
+
+      // Jogador 2: setas para cima e para baixo
+      if (teclas["arrowup"]) {
+        jogador2.y = jogador2.y - velocidadeJogador;
+      }
+      if (teclas["arrowdown"]) {
+        jogador2.y = jogador2.y + velocidadeJogador;
+      }
+
+      // Impede que as raquetes saiam do campo
+      if (jogador1.y < 0) jogador1.y = 0;
+      if (jogador1.y > alturaCampo - alturaRaquete) jogador1.y = alturaCampo - alturaRaquete;
+
+      if (jogador2.y < 0) jogador2.y = 0;
+      if (jogador2.y > alturaCampo - alturaRaquete) jogador2.y = alturaCampo - alturaRaquete;
+    }
+
+    // =====================================================
+    // MOVIMENTO DA BOLA E COLISÕES
+    // =====================================================
+
+    function moverBola() {
+      // A bola anda um pouco em x e em y a cada quadro
+      bola.x = bola.x + bola.dx;
+      bola.y = bola.y + bola.dy;
+
+      // Colisão com a parede de CIMA: inverte a direção vertical
+      if (bola.y - bola.tamanho < 0) {
+        bola.dy = -bola.dy;
+        bola.y = bola.tamanho; // corrige a posição para não "grudar" na parede
+      }
+
+      // Colisão com a parede de BAIXO
+      if (bola.y + bola.tamanho > alturaCampo) {
+        bola.dy = -bola.dy;
+        bola.y = alturaCampo - bola.tamanho;
+      }
+
+      // Colisão com a raquete do JOGADOR 1 (lado esquerdo)
+      // Condições: a bola está indo para a esquerda, chegou na raquete
+      // e a altura dela está dentro do espaço da raquete
+      if (bola.dx < 0 &&
+          bola.x - bola.tamanho < jogador1.x + larguraRaquete &&
+          bola.y > jogador1.y &&
+          bola.y < jogador1.y + alturaRaquete) {
+        bola.dx = -bola.dx; // rebate: inverte a direção horizontal
+      }
+
+      // Colisão com a raquete do JOGADOR 2 (lado direito)
+      if (bola.dx > 0 &&
+          bola.x + bola.tamanho > jogador2.x &&
+          bola.y > jogador2.y &&
+          bola.y < jogador2.y + alturaRaquete) {
+        bola.dx = -bola.dx; // rebate
+      }
+
+      // Pontuação: a bola passou da raquete e saiu do campo
+      if (bola.x < 0) {
+        // Saiu pela esquerda -> ponto do jogador 2
+        pontos2 = pontos2 + 1;
+        depoisDoPonto();
+      }
+
+      if (bola.x > larguraCampo) {
+        // Saiu pela direita -> ponto do jogador 1
+        pontos1 = pontos1 + 1;
+        depoisDoPonto();
+      }
+    }
+
+    // Acontece depois de qualquer ponto: confere vitória, atualiza o placar
+    // e recomeça a bola no centro
+    function depoisDoPonto() {
+      atualizarPlacar();
+
+      // Alguém chegou a 5 pontos? Então o jogo acaba
+      if (pontos1 >= pontosParaVencer || pontos2 >= pontosParaVencer) {
+        terminarJogo();
+        return;
+      }
+
+      recomecarBola();
+    }
+
+    // Coloca a bola de volta no centro, com direção nova
+    function recomecarBola() {
+      bola.x = larguraCampo / 2;
+      bola.y = alturaCampo / 2;
+
+      // O lado horizontal inverte (a bola vai para quem sofreu o ponto)
+      bola.dx = -bola.dx;
+
+      // A direção vertical é sorteada entre -5 e 5
+      bola.dy = Math.random() * 10 - 5;
+
+      // Evita bola andando só na horizontal (dy quase 0)
+      if (bola.dy > -1.5 && bola.dy < 1.5) {
+        bola.dy = 3;
+      }
+    }
+
+    // =====================================================
+    // PLACAR E FIM DE JOGO
+    // =====================================================
+
+    function atualizarPlacar() {
+      document.getElementById("pontos1").textContent = pontos1;
+      document.getElementById("pontos2").textContent = pontos2;
+    }
+
+    function terminarJogo() {
+      jogoAcabou = true;
+
+      // Mostra quem venceu
+      var mensagem = document.getElementById("mensagemFinal");
+      if (pontos1 > pontos2) {
+        mensagem.textContent = "Fim de jogo! Jogador 1 venceu!";
+      } else {
+        mensagem.textContent = "Fim de jogo! Jogador 2 venceu!";
+      }
+
+      document.getElementById("fimDeJogo").classList.remove("escondido");
+    }
+
+    // Botão "Jogar novamente": zera tudo e recomeça
+    document.getElementById("botaoRecomecar").addEventListener("click", function () {
+      pontos1 = 0;
+      pontos2 = 0;
+      jogador1.y = alturaCampo / 2 - alturaRaquete / 2;
+      jogador2.y = alturaCampo / 2 - alturaRaquete / 2;
+      jogoAcabou = false;
+
+      atualizarPlacar();
+      recomecarBola();
+      document.getElementById("fimDeJogo").classList.add("escondido");
+
+      // Chama o laço do jogo de novo
+      requestAnimationFrame(atualizar);
+    });
+
+    // =====================================================
+    // DESENHO
+    // =====================================================
+
+    function desenharTudo() {
+      // Fundo do campo
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(0, 0, larguraCampo, alturaCampo);
+
+      // Linha do meio (tracejada), só para enfeitar
+      ctx.strokeStyle = "#475569";
+      ctx.setLineDash([10, 15]);
+      ctx.beginPath();
+      ctx.moveTo(larguraCampo / 2, 0);
+      ctx.lineTo(larguraCampo / 2, alturaCampo);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Raquete do jogador 1 (verde)
+      ctx.fillStyle = "#4ade80";
+      ctx.fillRect(jogador1.x, jogador1.y, larguraRaquete, alturaRaquete);
+
+      // Raquete do jogador 2 (azul)
+      ctx.fillStyle = "#38bdf8";
+      ctx.fillRect(jogador2.x, jogador2.y, larguraRaquete, alturaRaquete);
+
+      // Bola (branca, um círculo)
+      ctx.fillStyle = "#f8fafc";
+      ctx.beginPath();
+      ctx.arc(bola.x, bola.y, bola.tamanho, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // =====================================================
+    // LAÇO PRINCIPAL DO JOGO
+    // =====================================================
+
+    // "atualizar" roda cerca de 60 vezes por segundo.
+    // Em cada volta: move as raquetes, move a bola e desenha tudo de novo.
+    function atualizar() {
+      if (jogoAcabou) {
+        return; // para o laço quando o jogo termina
+      }
+
+      moverJogadores();
+      moverBola();
+      desenharTudo();
+
+      // Pede ao navegador para chamar "atualizar" de novo no próximo quadro
+      requestAnimationFrame(atualizar);
+    }
+
+    // Começa o jogo
+    atualizarPlacar();
+    desenharTudo();
+    requestAnimationFrame(atualizar);
+  </script>
+</body>
+</html>
